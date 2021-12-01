@@ -52,6 +52,7 @@ struct padding
 
 } // end namespace padding_impl
 
+
 template<class T, size_t Align = 64>
 struct alignas(Align) aligned_atomic
   : public std::atomic<T>
@@ -77,13 +78,16 @@ struct alignas(Align) aligned_atomic
         return desired;
     }
 
+    // The alloc/dealloc mechanism is pretty much
+    // https://www.boost.org/doc/libs/1_76_0/boost/align/detail/aligned_alloc.hpp
+
     static void* operator new(size_t count) noexcept
     {
         // Make sure alignment is at least that of void*.
         constexpr size_t alignment =
           (Align >= alignof(void*)) ? Align : alignof(void*);
 
-        // Allocate enough space required for object, void*, and padding.
+        // Allocate enough space required for object and a void*.
         size_t space = count + alignment + sizeof(void*);
         void* p = std::malloc(space);
         if (p == nullptr) {
