@@ -17,12 +17,16 @@
 
 #pragma once
 
-#include <atomic>      // std::atomic
-#include <memory>      // std::align
+#include <atomic> // std::atomic
+#include <memory> // std::align
 
 namespace padding_impl {
 
-constexpr size_t mod(size_t a, size_t b)
+// Padding char[]s always must hold at least one char. We do some template
+// metaprogramming to ensure padding is only added if required.
+
+constexpr size_t
+mod(size_t a, size_t b)
 {
     return a - b * (a / b);
 }
@@ -33,18 +37,17 @@ struct padding_bytes
     static constexpr size_t obj_size = sizeof(std::atomic<T>);
     static constexpr size_t free_space = Align - mod(obj_size, Align);
     static constexpr size_t padding_size_ = free_space > 1 ? free_space : 1;
-    char padding_[padding_size_];  // must hold at least one byte to compile
+    char padding_[padding_size_];
 };
 
 struct empty_struct
 {};
 
-// Struct that holds padding bytes only if necessary.
 template<class T, size_t Align>
 struct padding
-  : private std::conditional<mod(sizeof(T), Align) != 0,
-                             padding_bytes<T, Align>,
-                             empty_struct>::type
+  : std::conditional<mod(sizeof(std::atomic<T>), Align) != 0,
+                     padding_bytes<T, Align>,
+                     empty_struct>::type
 {};
 
 } // end namespace padding_impl
@@ -73,17 +76,15 @@ struct alignas(Align) aligned_atomic
         this->store(desired);
         return desired;
     }
+
     static void* operator new(size_t count) noexcept
     {
         // Make sure alignment is at least that of void*.
         constexpr size_t alignment =
           (Align >= alignof(void*)) ? Align : alignof(void*);
 
-        // Compute space required for object, void*, and padding.
+        // Allocate enough space required for object, void*, and padding.
         size_t space = count + alignment + sizeof(void*);
-        space =
-          (space > 2 * alignment) ? space : (2 * alignment + 1); // padding
-
         void* p = std::malloc(space);
         if (p == nullptr) {
             return nullptr;
@@ -111,4 +112,3 @@ struct alignas(Align) aligned_atomic
         }
     }
 };
-
