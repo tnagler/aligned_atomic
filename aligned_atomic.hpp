@@ -17,11 +17,42 @@
 
 #pragma once
 
-#include <atomic> // std::atomic
-#include <memory> // std::align
+#include <atomic>      // std::atomic
+#include <memory>      // std::align
 
-template<class T, size_t Alignment = 64>
-struct alignas(Alignment) aligned_atomic : public std::atomic<T>
+namespace padding_impl {
+
+constexpr size_t mod(size_t a, size_t b)
+{
+    return a - b * (a / b);
+}
+
+template<class T, size_t Align>
+struct padding_bytes
+{
+    static constexpr size_t obj_size = sizeof(std::atomic<T>);
+    static constexpr size_t free_space = Align - mod(obj_size, Align);
+    static constexpr size_t padding_size_ = free_space > 1 ? free_space : 1;
+    char padding_[padding_size_];
+};
+
+struct empty_struct
+{};
+
+// Struct that holds padding bytes only if necessary.
+template<class T, size_t Align>
+struct padding
+  : private std::conditional<mod(sizeof(T), Align) != 0,
+                             padding_bytes<T, Align>,
+                             empty_struct>::type
+{};
+
+} // end namespace padding_impl
+
+template<class T, size_t Align = 64>
+struct alignas(Align) aligned_atomic
+  : public std::atomic<T>
+  , private padding_impl::padding<T, Align>
 {
   public:
     aligned_atomic() noexcept = default;
@@ -46,11 +77,12 @@ struct alignas(Alignment) aligned_atomic : public std::atomic<T>
     {
         // Make sure alignment is at least that of void*.
         constexpr size_t alignment =
-          (Alignment >= alignof(void*)) ? Alignment : alignof(void*);
+          (Align >= alignof(void*)) ? Align : alignof(void*);
 
         // Compute space required for object, void*, and padding.
         size_t space = count + alignment + sizeof(void*);
-        space = (space >= 2 * alignment) ? space : 2 * alignment; // padding
+        space =
+          (space > 2 * alignment) ? space : (2 * alignment + 1); // padding
 
         void* p = std::malloc(space);
         if (p == nullptr) {
