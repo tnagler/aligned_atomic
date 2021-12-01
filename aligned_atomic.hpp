@@ -33,7 +33,7 @@ struct padding_bytes
     static constexpr size_t obj_size = sizeof(std::atomic<T>);
     static constexpr size_t free_space = Align - mod(obj_size, Align);
     static constexpr size_t padding_size_ = free_space > 1 ? free_space : 1;
-    char padding_[padding_size_];
+    char padding_[padding_size_];  // must hold at least one byte to compile
 };
 
 struct empty_struct
