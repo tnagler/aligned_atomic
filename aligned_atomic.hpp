@@ -20,29 +20,34 @@
 #include <atomic> // std::atomic
 #include <memory> // std::align
 
+// Padding char[]s always must hold at least one char. If the size of the object
+// ends at an alignment point, we don't want to pad one extra byte however.
+// The construct below ensures that padding bytes are only added if necessary.
 namespace padding_impl {
 
-// Padding char[]s always must hold at least one char. We do some template
-// metaprogramming to ensure padding is only added if required.
-
+// constexpr modulo operator.
 constexpr size_t
 mod(size_t a, size_t b)
 {
     return a - b * (a / b);
 }
 
+// Padding bytes from end of aligned object until next alignment point. char[]
+// must hold at least one byte.
 template<class T, size_t Align>
 struct padding_bytes
 {
-    static constexpr size_t obj_size = sizeof(std::atomic<T>);
-    static constexpr size_t free_space = Align - mod(obj_size, Align);
-    static constexpr size_t padding_size_ = free_space > 1 ? free_space : 1;
-    char padding_[padding_size_];
+    static constexpr size_t free_space =
+      Align - mod(sizeof(std::atomic<T>), Align);
+    static constexpr size_t required = free_space > 1 ? free_space : 1;
+    char padding_[required];
 };
 
 struct empty_struct
 {};
 
+// Class holding padding bytes is necessary. Classes can inherit from this
+// to automically add padding if necessary.
 template<class T, size_t Align>
 struct padding
   : std::conditional<mod(sizeof(std::atomic<T>), Align) != 0,
@@ -52,7 +57,9 @@ struct padding
 
 } // end namespace padding_impl
 
-
+// Memory-aligned atomic `std::atomic<T>`. Behaves like `std::atomic<T>`, but
+// overloads operators `new` and `delete` to align its memory location. Padding
+// bytes are added if necessary.
 template<class T, size_t Align = 64>
 struct alignas(Align) aligned_atomic
   : public std::atomic<T>
@@ -66,21 +73,11 @@ struct alignas(Align) aligned_atomic
     {}
 
     // Assignment operators have been deleted, must redefine.
-    T operator=(T desired) noexcept
-    {
-        this->store(desired);
-        return desired;
-    }
-
-    T operator=(T desired) volatile noexcept
-    {
-        this->store(desired);
-        return desired;
-    }
+    T operator=(T x) noexcept { return std::atomic<T>::operator=(x); }
+    T operator=(T x) volatile noexcept { return std::atomic<T>::operator=(x); }
 
     // The alloc/dealloc mechanism is pretty much
     // https://www.boost.org/doc/libs/1_76_0/boost/align/detail/aligned_alloc.hpp
-
     static void* operator new(size_t count) noexcept
     {
         // Make sure alignment is at least that of void*.
@@ -102,8 +99,8 @@ struct alignas(Align) aligned_atomic
         (void)std::align(alignment, count, p_algn, space);
 
         // Store unaligned pointer with offset sizeof(void*) before aligned
-        // location. Later we'll know where to look for the pointer telling us
-        // where to free what we malloc()'ed above.
+        // location. Later we'll know where to look for the pointer telling
+        // us where to free what we malloc()'ed above.
         *(static_cast<void**>(p_algn) - 1) = p;
 
         return p_algn;
@@ -112,6 +109,7 @@ struct alignas(Align) aligned_atomic
     static void operator delete(void* ptr)
     {
         if (ptr) {
+            // Read pointer to start of malloc()'ed block and free there.
             std::free(*(static_cast<void**>(ptr) - 1));
         }
     }
