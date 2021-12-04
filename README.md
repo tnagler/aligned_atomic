@@ -5,10 +5,10 @@
 
 ### Problem
 
-Atomic objects are meant to be shared across cores. Read and write (and some read-modify-write) operations are atomic, so there are no data races. However, 
-if one core writes it must flush the memory of others. If the other core is 
-reading from a second object that shares the same cache line, this causes 
-significant overhead (see [false sharing](https://en.wikipedia.org/wiki/False_sharing)).
+Read and write operations on an atomic object are free from [data races](https://en.wikipedia.org/wiki/Race_condition). However, if one core writes to it, all cache 
+lines occupied by the object are invalidated. If another core is reading from an 
+unrelated object that shares the same cache line, it incurs unnecessary overhead 
+(see [false sharing](https://en.wikipedia.org/wiki/False_sharing)).
 
 ### Solution
 
